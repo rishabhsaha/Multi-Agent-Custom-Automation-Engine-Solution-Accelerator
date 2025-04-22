@@ -91,6 +91,9 @@
       case "GenericAgent":
         agentIcon = "manager";
         break;
+      case "BakerAgent":
+        agentIcon = "manager";
+        break;
       case "HumanAgent":
         let userNumber = getStoredData("userNumber");
         if (userNumber == null) {

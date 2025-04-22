@@ -19,7 +19,7 @@ from src.backend.agents.procurement import ProcurementAgent, get_procurement_too
 from src.backend.agents.product import ProductAgent, get_product_tools
 from src.backend.agents.generic import GenericAgent, get_generic_tools
 from src.backend.agents.tech_support import TechSupportAgent, get_tech_support_tools
-
+from src.backend.agents.associate import BakerAgent, get_baker_tools
 # from agents.misc import MiscAgent
 from src.backend.config import Config
 from src.backend.context.cosmos_memory import CosmosBufferedChatCompletionContext
@@ -44,7 +44,7 @@ procurement_tools = get_procurement_tools()
 product_tools = get_product_tools()
 generic_tools = get_generic_tools()
 tech_support_tools = get_tech_support_tools()
-
+baker_tools = get_baker_tools()
 
 # Initialize the Azure OpenAI model client
 aoai_model_client = Config.GetAzureOpenAIChatCompletionClient(
@@ -97,6 +97,8 @@ async def initialize_runtime_and_context(
     tech_support_agent_id = AgentId("tech_support_agent", session_id)
     tech_support_tool_agent_id = AgentId("tech_support_tool_agent", session_id)
     group_chat_manager_id = AgentId("group_chat_manager", session_id)
+    baker_agent_id = AgentId("baker_agent", session_id)
+    baker_tool_agent_id = AgentId("baker_tool_agent", session_id)
 
     # Initialize the context for the session
     cosmos_memory = CosmosBufferedChatCompletionContext(session_id, user_id)
@@ -105,6 +107,11 @@ async def initialize_runtime_and_context(
     runtime = SingleThreadedAgentRuntime(tracer_provider=None)
 
     # Register tool agents
+    await ToolAgent.register(
+    runtime,
+    "baker_tool_agent",
+    lambda: ToolAgent("Baker tool execution agent", baker_tools),
+    )
     await ToolAgent.register(
         runtime, "hr_tool_agent", lambda: ToolAgent("HR tool execution agent", hr_tools)
     )
@@ -240,6 +247,18 @@ async def initialize_runtime_and_context(
         human_agent_id.type,
         lambda: HumanAgent(cosmos_memory, user_id, group_chat_manager_id),
     )
+    await BakerAgent.register(
+        runtime,
+        baker_agent_id.type,
+        lambda: BakerAgent(
+            aoai_model_client,
+            session_id,
+            user_id,
+            cosmos_memory,
+            get_baker_tools(),
+            baker_tool_agent_id,
+        ),
+    )
 
     agent_ids = {
         BAgentType.planner_agent: planner_agent_id,
@@ -250,7 +269,9 @@ async def initialize_runtime_and_context(
         BAgentType.product_agent: product_agent_id,
         BAgentType.generic_agent: generic_agent_id,
         BAgentType.tech_support_agent: tech_support_agent_id,
+        BAgentType.baker_agent: baker_agent_id,
     }
+    
     await GroupChatManager.register(
         runtime,
         group_chat_manager_id.type,
@@ -274,7 +295,7 @@ def retrieve_all_agent_tools() -> List[Dict[str, Any]]:
     procurement_tools: List[Tool] = get_procurement_tools()
     product_tools: List[Tool] = get_product_tools()
     tech_support_tools: List[Tool] = get_tech_support_tools()
-
+    baker_tools: List[Tool] = get_baker_tools()
     functions = []
 
     # Add TechSupportAgent functions
@@ -331,7 +352,17 @@ def retrieve_all_agent_tools() -> List[Dict[str, Any]]:
                 "arguments": str(tool.schema["parameters"]["properties"]),
             }
         )
-
+    # Add BakerAgent functions
+    for tool in baker_tools:
+        functions.append(
+            {
+                "agent": "BakerAgent",
+                "function": tool.name,
+                "description": tool.description,
+                "arguments": str(tool.schema["parameters"]["properties"]),
+            }
+        )
+    
     return functions
 
 
